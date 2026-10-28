@@ -839,7 +839,36 @@ function modificaEventoFrutteto(i){
 }
 function eliminaEventoFrutteto(i){if(confirm('Eliminare questo evento del frutteto?')){db.eventiFrutteto.splice(i,1);save()}}
 
-function alberi(a){a.innerHTML=`<h2>🌳 Alberi da frutto</h2><div class="card"><h3>Aggiungi un albero</h3><div class="form"><input id="a1" placeholder="Specie (es. limone)"><input id="a2" placeholder="Varietà"><input id="a3" type="date" title="Data impianto"><select id="a4"><option>Piena terra</option><option>Vaso</option></select><input id="a5" placeholder="Posizione"><input id="a6" placeholder="Note"><button onclick="addAlbero()">Aggiungi albero</button></div></div><div class="grid" style="margin-top:16px">${db.alberi.map((x,i)=>`<div class="card"><h3>🌳 ${esc(x.specie)}</h3><p>${esc(x.varieta)} · ${esc(x.sede)}</p><p>Impianto: ${esc(x.data||'Non indicato')}</p><p>Posizione: ${esc(x.pos)}</p><p>${esc(x.note)}</p><button class="secondary" onclick="apriDiarioAlbero('${x.pid}')">🍎 Diario</button> <button class="secondary" onclick="apriScheda('${x.pid}')">📒 Scheda</button> <button class="danger" onclick="del('alberi',${i})">Elimina</button></div>`).join('')||'<div class="card">Non hai ancora registrato alberi.</div>'}</div>`}
+let alberoInModifica=null;
+function alberi(a){
+ const edit=alberoInModifica!==null&&db.alberi[alberoInModifica];
+ if(alberoInModifica!==null&&!edit)alberoInModifica=null;
+ a.innerHTML=`<h2>🌳 Alberi da frutto</h2><div class="card"><h3>Aggiungi un albero</h3><div class="form"><input id="a1" placeholder="Specie (es. limone)"><input id="a2" placeholder="Varietà"><input id="a3" type="date" title="Data impianto"><select id="a4"><option>Piena terra</option><option>Vaso</option></select><input id="a5" placeholder="Posizione"><input id="a6" placeholder="Note"><button onclick="addAlbero()">Aggiungi albero</button></div></div>
+ ${edit?`<div class="card" style="margin-top:16px;border:2px solid #276b48"><h3>✏️ Modifica albero: ${esc(edit.specie)}</h3><div class="form"><label>Specie<input id="editA1" value="${esc(edit.specie)}"></label><label>Varietà<input id="editA2" value="${esc(edit.varieta)}"></label><label>Data impianto<input id="editA3" type="date" value="${esc(edit.data)}"></label><label>Coltivazione<select id="editA4"><option ${edit.sede==='Piena terra'?'selected':''}>Piena terra</option><option ${edit.sede==='Vaso'?'selected':''}>Vaso</option></select></label><label>Posizione<input id="editA5" value="${esc(edit.pos)}"></label><label>Note<input id="editA6" value="${esc(edit.note)}"></label></div><div class="rowbuttons"><button onclick="salvaModificaAlbero()">Salva modifiche</button><button class="secondary" onclick="annullaModificaAlbero()">Annulla</button></div></div>`:''}
+ <div class="grid" style="margin-top:16px">${db.alberi.map((x,i)=>`<div class="card"><h3>🌳 ${esc(x.specie)}</h3><p>${esc(x.varieta)} · ${esc(x.sede)}</p><p>Impianto: ${esc(x.data||'Non indicato')}</p><p>Posizione: ${esc(x.pos)}</p><p>${esc(x.note)}</p><button class="secondary" onclick="apriDiarioAlbero('${x.pid}')">🍎 Diario</button> <button class="secondary" onclick="apriScheda('${x.pid}')">📒 Scheda</button> <button class="secondary" onclick="modificaAlbero(${i})">Modifica</button> <button class="danger" onclick="del('alberi',${i})">Elimina</button></div>`).join('')||'<div class="card">Non hai ancora registrato alberi.</div>'}</div>`;
+}
+function modificaAlbero(i){
+ if(!db.alberi[i])return;
+ alberoInModifica=i;
+ render();
+ document.getElementById('editA1')?.focus();
+}
+function annullaModificaAlbero(){alberoInModifica=null;render()}
+function salvaModificaAlbero(){
+ const i=alberoInModifica;
+ if(i===null||!db.alberi[i])return alert('Albero non trovato.');
+ const specie=document.getElementById('editA1').value.trim();
+ if(!specie)return alert('Inserisci la specie dell’albero.');
+ const x=db.alberi[i];
+ x.specie=specie;
+ x.varieta=document.getElementById('editA2').value.trim();
+ x.data=document.getElementById('editA3').value;
+ x.sede=document.getElementById('editA4').value;
+ x.pos=document.getElementById('editA5').value.trim();
+ x.note=document.getElementById('editA6').value.trim();
+ alberoInModifica=null;
+ save();
+}
 function addAlbero(){if(!a1.value.trim())return alert('Indica la specie');db.alberi.push({pid:uidPianta(),specie:a1.value.trim(),varieta:a2.value,data:a3.value,sede:a4.value,pos:a5.value,note:a6.value});save()}
 
 let meteoStato={loading:false,errore:'',data:null,aggiornato:''};
@@ -1061,4 +1090,3 @@ function startRecoveryIfPresent(){
 if(!startRecoveryIfPresent())render();
 </script>
 </body></html>
-incollato
