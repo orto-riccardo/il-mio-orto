@@ -192,9 +192,35 @@ function dash(a){
  <div class="card" style="margin-top:15px"><h3>📦 Magazzino</h3>${avvisi.slice(0,6).map(x=>`<p>⚠️ <b>${esc(x.nome)}</b> — ${esc(x.motivo)}</p>`).join('')||'<p class="muted">Nessun avviso di magazzino.</p>'}</div>
  <div class="card" style="margin-top:15px"><h3>🛡️ Qualità dei dati</h3>${anomalie.slice(0,5).map(x=>`<p>• ${esc(x.messaggio)}</p>`).join('')||'<p class="muted">Nessuna anomalia rilevata dai controlli disponibili.</p>'}<p><button class="secondary" onclick="page='controllo';render()">Apri tutti i controlli</button> <button class="secondary" onclick="page='ricerca';render()">🔎 Ricerca generale</button></p></div>`;
 }
-function colture(a){a.innerHTML=`<h2>Colture</h2><div class="card"><h3>Nuova coltura</h3><div class="form"><input id="c1" placeholder="Coltura (es. pomodoro)"><input id="c2" placeholder="Varietà"><input id="c3" type="date" title="Data semina/trapianto"><input id="c4" placeholder="Posizione"><button onclick="addColtura()">Aggiungi</button></div></div>
-<div class="card" style="margin-top:15px"><table><tr><th>Coltura</th><th>Varietà</th><th>Data</th><th>Posizione</th><th></th></tr>${db.colture.map((x,i)=>`<tr><td><b>${esc(x.nome)}</b></td><td>${esc(x.var)}</td><td>${esc(x.data)}</td><td>${esc(x.pos)}</td><td><button class="danger" onclick="del('colture',${i})">Elimina</button></td></tr>`).join("")}</table></div>`}
+let colturaInModifica=null;
+function colture(a){
+ const edit=colturaInModifica!==null&&db.colture[colturaInModifica];
+ if(colturaInModifica!==null&&!edit)colturaInModifica=null;
+ a.innerHTML=`<h2>Colture</h2><div class="card"><h3>Nuova coltura</h3><div class="form"><input id="c1" placeholder="Coltura (es. pomodoro)"><input id="c2" placeholder="Varietà"><input id="c3" type="date" title="Data semina/trapianto"><input id="c4" placeholder="Posizione"><button onclick="addColtura()">Aggiungi</button></div></div>
+ ${edit?`<div class="card" style="margin-top:15px;border:2px solid #276b48"><h3>✏️ Modifica coltura: ${esc(edit.nome)}</h3><div class="form"><label>Coltura<input id="editC1" value="${esc(edit.nome)}"></label><label>Varietà<input id="editC2" value="${esc(edit.var)}"></label><label>Data<input id="editC3" type="date" value="${esc(edit.data)}"></label><label>Posizione<input id="editC4" value="${esc(edit.pos)}"></label></div><div class="rowbuttons"><button onclick="salvaModificaColtura()">Salva modifiche</button><button class="secondary" onclick="annullaModificaColtura()">Annulla</button></div></div>`:''}
+ <div class="card" style="margin-top:15px"><div class="scroll"><table><tr><th>Coltura</th><th>Varietà</th><th>Data</th><th>Posizione</th><th>Azioni</th></tr>${db.colture.map((x,i)=>`<tr><td><b>${esc(x.nome)}</b></td><td>${esc(x.var)}</td><td>${esc(x.data)}</td><td>${esc(x.pos)}</td><td><button class="secondary" onclick="modificaColtura(${i})">Modifica</button> <button class="danger" onclick="del('colture',${i})">Elimina</button></td></tr>`).join("")}</table></div></div>`;
+}
 function addColtura(){let nome=c1.value.trim();if(!nome)return alert("Inserisci la coltura");db.colture.push({pid:uidPianta(),nome,var:c2.value,data:c3.value,pos:c4.value});save()}
+function modificaColtura(i){
+ if(!db.colture[i])return;
+ colturaInModifica=i;
+ render();
+ document.getElementById('editC1')?.focus();
+}
+function annullaModificaColtura(){colturaInModifica=null;render()}
+function salvaModificaColtura(){
+ const i=colturaInModifica;
+ if(i===null||!db.colture[i])return alert('Coltura non trovata.');
+ const nome=document.getElementById('editC1').value.trim();
+ if(!nome)return alert('Inserisci il nome della coltura.');
+ const x=db.colture[i];
+ x.nome=nome;
+ x.var=document.getElementById('editC2').value.trim();
+ x.data=document.getElementById('editC3').value;
+ x.pos=document.getElementById('editC4').value.trim();
+ colturaInModifica=null;
+ save();
+}
 function attivita(a){a.innerHTML=`<h2>Attività</h2><div class="card"><h3>Programma attività</h3><div class="form"><select id="t1"><option>Irrigazione</option><option>Concimazione</option><option>Trattamento</option><option>Semina</option><option>Trapianto</option><option>Potatura</option><option>Altro</option></select><input id="t2" placeholder="Coltura"><input id="t3" type="date"><input id="t4" placeholder="Note"><button onclick="addAtt()">Aggiungi</button></div></div>
 <div class="card" style="margin-top:15px"><table><tr><th>Data</th><th>Tipo</th><th>Coltura</th><th>Note</th><th></th></tr>${db.attivita.sort((x,y)=>x.data.localeCompare(y.data)).map((x,i)=>`<tr><td>${esc(x.data)}</td><td>${esc(x.tipo)}</td><td>${esc(x.coltura)}</td><td>${esc(x.note)}</td><td><button class="danger" onclick="del('attivita',${i})">Elimina</button></td></tr>`).join("")}</table></div>`}
 function addAtt(){if(!t3.value)return alert("Inserisci la data");db.attivita.push({tipo:t1.value,coltura:t2.value,data:t3.value,note:t4.value});save()}
