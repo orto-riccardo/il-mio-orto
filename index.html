@@ -1060,7 +1060,7 @@ async function cloudLogin(){const email=document.getElementById('cloudEmail').va
 function cloudLogout(){clearTimeout(cloudTimer);cloudSession=null;cloudVersion=null;cloudDirty=false;sessionStorage.removeItem('ortoCloudSession_PROD');cloudMessage('Disconnesso. Dati locali conservati.');render()}
 async function cloudFetch(){await cloudToken();const r=await cloudRequest('/rest/v1/orto_dati?select=dati,versione&user_id=eq.'+encodeURIComponent(cloudSession.user.id),{headers:{Accept:'application/json'}});return r.body?.[0]||null}
 async function cloudInitialize(){if(!cloudSession)return; if(!confirm('Creare il primo archivio cloud usando i dati attualmente presenti in QUESTO browser? Scarica prima un backup JSON.'))return;try{cloudBusy=true;await cloudToken();const remote=await cloudFetch();if(remote){cloudMessage('Esiste già un archivio cloud: nessun dato sovrascritto. Usa Scarica dal cloud.');return}const r=await cloudRequest('/rest/v1/orto_dati',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({user_id:cloudSession.user.id,dati:db,versione:1})});cloudVersion=r.body?.[0]?.versione||1;cloudDirty=false;cloudRemember();cloudMessage('Archivio cloud inizializzato. Versione '+cloudVersion+'.');render()}catch(e){cloudMessage('Inizializzazione non riuscita: '+e.message)}finally{cloudBusy=false}}
-// Unione prudente: mantiene gli elementi di entrambi gli archivi; blocca modifiche divergenti allo stesso ID.
+// Unione con risoluzione esplicita dei conflitti: nessuna scelta implicita sui dati diversi.
 function cloudMergeData(remoteData,localData){
  const result=JSON.parse(JSON.stringify(remoteData)), conflicts=[],added=[];
  const stable=x=>JSON.stringify(x);
@@ -1072,17 +1072,14 @@ function cloudMergeData(remoteData,localData){
    const out=JSON.parse(JSON.stringify(rv));
    for(const item of lv){
     const idKey=item&&typeof item==='object'?(item.id!=null?'id':item.pid!=null?'pid':null):null;
-    const existing=idKey?out.find(x=>x&&typeof x==='object'&&x[idKey]===item[idKey]):out.find(x=>stable(x)===stable(item));
-    if(existing===undefined){out.push(JSON.parse(JSON.stringify(item)));added.push(key)}
-    else if(stable(existing)!==stable(item))conflicts.push(key+' (ID '+String(item[idKey])+')');
+    const idx=idKey?out.findIndex(x=>x&&typeof x==='object'&&x[idKey]===item[idKey]):out.findIndex(x=>stable(x)===stable(item));
+    if(idx<0){out.push(JSON.parse(JSON.stringify(item)));added.push(key)}
+    else if(stable(out[idx])!==stable(item))conflicts.push({key,index:idx,id:idKey?String(item[idKey]):'',cloud:out[idx],mac:item});
    }
    result[key]=out;
-  }else if(stable(rv)!==stable(lv)){
-   // Gli oggetti di configurazione vengono mantenuti dal cloud, mai sostituiti in silenzio.
-   conflicts.push(key);
-  }
+  }else if(stable(rv)!==stable(lv))conflicts.push({key,index:null,id:'',cloud:rv,mac:lv});
  }
- return {result,conflicts:[...new Set(conflicts)],added};
+ return {result,conflicts,added};
 }
 async function cloudMergeFromMac(){
  if(!cloudSession||cloudBusy)return;
@@ -1092,17 +1089,33 @@ async function cloudMergeFromMac(){
   if(!remote||!remote.dati||!Number.isInteger(remote.versione))throw Error('Archivio cloud non valido. Nessuna modifica.');
   const localSnapshot=JSON.stringify(db);
   const merge=cloudMergeData(remote.dati,db);
-  if(merge.conflicts.length){cloudMessage('UNIONE BLOCCATA: dati diversi per '+merge.conflicts.slice(0,5).join(', ')+'. Nessuna modifica effettuata. Conserva entrambi i backup.');return}
-  const n=merge.added.length;
-  if(!confirm('Unione controllata: '+n+' elementi o sezioni locali da aggiungere al cloud. Nessun elemento cloud verrà eliminato. Continuare?'))return;
+  if(merge.conflicts.length){
+   cloudMessage('Rilevati '+merge.conflicts.length+' conflitti: serve una scelta esplicita. Nessuna modifica effettuata.');
+   for(let i=0;i<merge.conflicts.length;i++){
+    const c=merge.conflicts[i];
+    const descrizione=c.key+(c.id?' (ID '+c.id+')':'');
+    const preview=x=>JSON.stringify(x,null,2).slice(0,2500);
+    const scelta=prompt('CONFLITTO '+(i+1)+' di '+merge.conflicts.length+': '+descrizione+'\n\nCLOUD:\n'+preview(c.cloud)+'\n\nMAC:\n'+preview(c.mac)+'\n\nDigita MAC per usare la versione del Mac, CLOUD per mantenere quella online, oppure ANNULLA per interrompere.','ANNULLA');
+    if(scelta===null||scelta.trim().toUpperCase()==='ANNULLA'){cloudMessage('Unione annullata. Nessun dato modificato.');return}
+    const choice=scelta.trim().toUpperCase();
+    if(choice!=='MAC'&&choice!=='CLOUD'){cloudMessage('Scelta non riconosciuta. Nessun dato modificato.');return}
+    if(choice==='MAC'){
+     const value=JSON.parse(JSON.stringify(c.mac));
+     if(c.index===null)merge.result[c.key]=value;
+     else merge.result[c.key][c.index]=value;
+    }
+   }
+  }
   if(JSON.stringify(db)!==localSnapshot)throw Error('Dati locali cambiati durante il controllo. Riprova.');
+  const n=merge.added.length;
+  if(!confirm('RIEPILOGO UNIONE\n'+n+' elementi/sezioni locali aggiunti.\n'+merge.conflicts.length+' conflitti risolti secondo le tue scelte.\nNessun elemento cloud verrà eliminato.\n\nConfermi il salvataggio sul cloud?')){cloudMessage('Unione annullata. Nessun dato modificato.');return}
   const v=remote.versione;
   const r=await cloudRequest('/rest/v1/orto_dati?user_id=eq.'+encodeURIComponent(cloudSession.user.id)+'&versione=eq.'+v,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({dati:merge.result,versione:v+1,aggiornato_il:new Date().toISOString()})});
-  if(!Array.isArray(r.body)||r.body.length!==1){cloudMessage('CONFLITTO: cloud aggiornato da un altro dispositivo. Nessuna modifica locale. Riprova dopo il controllo.');return}
+  if(!Array.isArray(r.body)||r.body.length!==1){cloudMessage('CONFLITTO: cloud aggiornato da un altro dispositivo. Nessuna modifica locale.');return}
   db=merge.result;
   ensurePlantIds();localStorage.setItem(KEY,JSON.stringify(db));
   cloudVersion=v+1;cloudDirty=false;cloudRemember();
-  cloudMessage('Unione completata · versione '+cloudVersion+' · '+n+' elementi/sezioni aggiunti.');render();
+  cloudMessage('Unione completata · versione '+cloudVersion+' · '+n+' elementi/sezioni aggiunti · '+merge.conflicts.length+' conflitti risolti.');render();
  }catch(e){cloudMessage('Unione non riuscita: '+e.message+' · dati locali conservati.')}finally{cloudBusy=false}
 }
 async function cloudDownload(){if(!cloudSession)return;try{cloudBusy=true;const remote=await cloudFetch();if(!remote){cloudMessage('Archivio cloud ancora vuoto. Inizializzalo dal Mac che contiene tutti i dati.');return}if(!remote.dati||!Array.isArray(remote.dati.colture)||!Array.isArray(remote.dati.alberi))throw Error('Archivio cloud non riconosciuto');if(!confirm('Sostituire i dati locali di questo browser con quelli cloud? Scarica prima un backup JSON se vuoi conservarli.'))return;db=remote.dati;db.sementi ||= [];db.movimentiSementi ||= [];cloudVersion=remote.versione;cloudDirty=false;ensurePlantIds();localStorage.setItem(KEY,JSON.stringify(db));cloudRemember();cloudMessage('Dati scaricati dal cloud. Versione '+cloudVersion+'.');render()}catch(e){cloudMessage('Download non riuscito: '+e.message)}finally{cloudBusy=false}}
