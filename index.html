@@ -1428,8 +1428,25 @@ function sementi(a){
  <div class="scroll"><table><thead><tr><th>Semente</th><th>Marca / lotto</th><th>Disponibilità</th><th>Scadenza</th><th>Germinabilità</th><th>Azioni</th></tr></thead><tbody id="seedRows">
  ${lista.map(x=>`<tr data-seed-id="${esc(x.id)}"><td><b>${esc(x.coltura)}</b><div>${esc(x.varieta)}</div></td><td>${esc(x.marca)}<div class="muted">${esc(x.lotto)}</div></td><td>${esc(x.quantita)} ${esc(x.unita)} ${riepilogoPacchi(x)} ${Number(x.quantita)<=Number(x.minimo||0)?'<span class="tag">Scorta bassa</span>':''}</td><td>${esc(x.scadenza||'—')} ${x.scadenza&&x.scadenza<oggi?'<span class="tag">Scaduta</span>':x.scadenza&&x.scadenza<=addDays(oggi,60)?'<span class="tag">In scadenza</span>':''}</td><td>${x.germinabilita===''||x.germinabilita==null?'—':esc(x.germinabilita)+'%'}</td><td><button class="secondary" onclick="modificaSemente('${x.id}')">✏️ Modifica</button> <button class="secondary" onclick="rettificaSemente('${x.id}')">${pacchiSemente(x)?"+ Confezioni":"± Scorta"}</button> ${pacchiSemente(x)?`<button class="secondary" onclick="apriPaccoSemente('${x.id}')">🔓 Apri confezione</button>`:""} <button class="danger" onclick="eliminaSemente('${x.id}')">Elimina</button></td></tr>`).join('')||'<tr><td colspan="6">Nessuna semente registrata.</td></tr>'}</tbody></table></div></div>
  ${registroGerminazioneHTML()}
- <div class="card" style="margin-top:15px"><h3>Ultimi movimenti</h3><div class="scroll"><table><tr><th>Data</th><th>Operazione</th><th>Quantità</th></tr>${(db.movimentiSementi||[]).slice(-30).reverse().map(m=>`<tr><td>${esc(m.data)}</td><td>${esc(m.tipo)} · ${esc(lista.find(x=>x.id===m.sementeId)?.coltura||'Semente eliminata')}</td><td>${m.quantita>0?'+':''}${esc(m.quantita)} ${esc(m.unita)}</td></tr>`).join('')}</table></div></div>`;
+ <div class="card" style="margin-top:15px"><h3>Ultimi movimenti</h3>
+ <p class="muted">I movimenti delle sementi già eliminate possono essere rimossi dallo storico, senza modificare le scorte o altri archivi.</p>
+ ${((db.movimentiSementi||[]).filter(m=>!lista.some(x=>x.id===m.sementeId)).length)>0?`<p class="no-print"><button class="danger" onclick="eliminaMovimentiSementiOrfani()">🗑️ Elimina ${db.movimentiSementi.filter(m=>!lista.some(x=>x.id===m.sementeId)).length} movimenti di sementi eliminate</button></p>`:''}
+ <div class="scroll"><table><tr><th>Data</th><th>Operazione</th><th>Quantità</th></tr>${(db.movimentiSementi||[]).slice(-30).reverse().map(m=>`<tr><td>${esc(m.data)}</td><td>${esc(m.tipo)} · ${esc(lista.find(x=>x.id===m.sementeId)?.coltura||'Semente eliminata')}</td><td>${m.quantita>0?'+':''}${esc(m.quantita)} ${esc(m.unita)}</td></tr>`).join('')}</table></div></div>`;
  filtraSementi();
+}
+function eliminaMovimentiSementiOrfani(){
+ if(testMode){alert('Sei in modalità TEST: questa operazione riguarda solo l’archivio di prova.');return;}
+ const attive=new Set((db.sementi||[]).map(x=>x.id));
+ const orfani=(db.movimentiSementi||[]).filter(m=>!attive.has(m.sementeId));
+ if(!orfani.length){alert('Non ci sono movimenti di sementi eliminate.');return;}
+ if(!confirm('Eliminare definitivamente '+orfani.length+' movimenti associati a sementi eliminate?\n\nLe scorte, gli alberi, i concimi, la mappa e le foto NON verranno modificati. Conserva prima il backup JSON.'))return;
+ // Salva solo in questo browser; nessun upload automatico a Supabase.
+ clearTimeout(cloudTimer);
+ db.movimentiSementi=(db.movimentiSementi||[]).filter(m=>attive.has(m.sementeId));
+ localStorage.setItem(KEY,JSON.stringify(db));
+ cloudDirty=true;
+ render();
+ alert('Eliminati '+orfani.length+' movimenti solo da questo browser. Nessun dato è stato inviato a Supabase. Conserva il backup precedente.');
 }
 async function anteprimaImportaSementi(){
  const f=document.getElementById('seedCatalogFile').files[0];if(!f)return alert('Scegli un JSON');
